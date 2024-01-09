@@ -1,5 +1,3 @@
-
-
 import tensorflow
 import tokenizers
 import torch
@@ -10,11 +8,11 @@ from pathlib import Path
 from torch.utils.data.dataset import Dataset
 from tokenizers.processors import RobertaProcessing
 from adapted_robbert_class import LineByLineTextDatasetRobbert
-from tokenizers import ByteLevelBPETokenizer
+# from tokenizers import ByteLevelBPETokenizer
 
 
 from transformers import (
-    RobertaConfig, 
+    RobertaConfig,
     RobertaTokenizerFast,
     RobertaTokenizer,
     RobertaForMaskedLM,
@@ -23,18 +21,23 @@ from transformers import (
     DataCollatorForLanguageModeling,
     Trainer,
     TrainingArguments
-    )
+)
+
 
 def checkRequirements():
     print("Checking requirements...")
+    # Ensure the availability of CUDA for training with GPUs
     assert torch.cuda.is_available()
+
 
 def trainTokenizer(paths, outfile):
     """
-    Trains a tokenizer
-    Saves a vocabulary
+    Trains a Byte Level BPE Tokenizer and saves the tokenizer model.
+
+    paths: List of file paths for training data.
+    outfile: Directory where tokenizer model will be saved.
     """
-    
+
     print("Initializing tokenizer...")
     from tokenizers import ByteLevelBPETokenizer
     tokenizer = ByteLevelBPETokenizer()
@@ -51,9 +54,13 @@ def trainTokenizer(paths, outfile):
     tokenizer.save_model(outfile)
     print("Saved vocab to disk.")
 
+
 def setConfig():
     """
-    Set model configurations
+    Sets up the configuration for the RoBERTa model.
+
+    Returns:
+    config: RobertaConfig object with specified model parameters.
     """
     print("Setting RoBERTa configurations for model...")
     config = RobertaConfig(
@@ -63,8 +70,8 @@ def setConfig():
         num_hidden_layers=12,
         type_vocab_size=1,
     )
-    
-    return(config)
+
+    return config
 
 
 def get_optimizer(model, args):
@@ -75,20 +82,26 @@ def get_optimizer(model, args):
     :param model: initialized transformer model
     :param args: dict
     """
-    
+    # Define parameters that shouldn't be decayed
     no_decay = ["bias", "LayerNorm.weight"]
     optimizer_grouped_parameters = [
+        # Parameters with decay
         {
             "params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
             "weight_decay": 0.01,
         },
+        # Parameters without decay
         {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], "weight_decay": 0.0},
     ]
-    
-    optimizer = transformers.AdamW(optimizer_grouped_parameters, lr = args['lr'], betas = args['betas'], weight_decay = args['weight_decay'], eps = args['eps']) 
-    scheduler = transformers.get_linear_schedule_with_warmup(optimizer, num_warmup_steps = args['num_warmup_steps'], num_training_steps = args['num_training_steps']) 
-    
-    return(optimizer, scheduler)
+    # Initialize the optimizer
+    optimizer = transformers.AdamW(optimizer_grouped_parameters, lr=args['lr'], betas=args['betas'],
+                                   weight_decay=args['weight_decay'], eps=args['eps'])
+    # Initialize the scheduler
+    scheduler = transformers.get_linear_schedule_with_warmup(optimizer, num_warmup_steps=args['num_warmup_steps'],
+                                                             num_training_steps=args['num_training_steps'])
+
+    return optimizer, scheduler
+
 
 def setArguments(model, data_collator, dataset, eval_dataset, optimizer, scheduler, args):
     """
@@ -103,31 +116,32 @@ def setArguments(model, data_collator, dataset, eval_dataset, optimizer, schedul
         num_train_epochs=args['num_train_epochs'],
         per_device_train_batch_size=args['per_device_train_batch_size'],
         per_device_eval_batch_size=args['per_device_eval_batch_size'],
-        do_eval = args['do_eval'], #evaluate on small dataset to calculate loss
-        do_train = args['do_train'], 
-        evaluation_strategy = args['evaluation_strategy'],
-        eval_steps = args['eval_steps'], #do evaluation on small dataset each x amount of steps
-        save_steps= args['save_steps'], #save a checkpoint of the model each x amount of steps
-        save_total_limit= args['save_total_limit'], #save at most 100 checkpoints
-        logging_steps = args['logging_steps'], #save loss and learning rate to log every x amount of steps
-        logging_dir = args['logging_dir'],
-        gradient_accumulation_steps = args['gradient_accumulation_steps'], 
-        eval_accumulation_steps = args['eval_accumulation_steps'],
+        do_eval=args['do_eval'],  # evaluate on small dataset to calculate loss
+        do_train=args['do_train'],
+        evaluation_strategy=args['evaluation_strategy'],
+        eval_steps=args['eval_steps'],  # do evaluation on small dataset each x amount of steps
+        save_steps=args['save_steps'],  # save a checkpoint of the model each x amount of steps
+        save_total_limit=args['save_total_limit'],  # save at most 100 checkpoints
+        logging_steps=args['logging_steps'],  # save loss and learning rate to log every x amount of steps
+        logging_dir=args['logging_dir'],
+        gradient_accumulation_steps=args['gradient_accumulation_steps'],
+        eval_accumulation_steps=args['eval_accumulation_steps'],
         fp16=args['fp16'],
-        weight_decay = args['weight_decay']
+        weight_decay=args['weight_decay']
     )
-    
+
     print("initializing trainer...")
     trainer = Trainer(
         model=model,
         args=training_args,
         data_collator=data_collator,
         train_dataset=dataset,
-        eval_dataset = eval_dataset,
-        optimizers = (optimizer, scheduler)
+        eval_dataset=eval_dataset,
+        optimizers=(optimizer, scheduler)
     )
 
-    return(trainer)
+    return trainer
+
 
 def train(trainer, path_to_model):
     print("Start training...")
@@ -135,53 +149,54 @@ def train(trainer, path_to_model):
 
     trainer.save_model(path_to_model)
     print("Saved model to disk.")
-    
-    
+
+
 def main(args):
     """
     Train tokenizer, create vocab, set configuration, initialize model, set data collator, initialize optimizer and scheduler, load line by line dataset, define trainer, train model, save model
     :param args: dictionary
     """
-    
-    #define paths to train and eval data
+
+    # define paths to train and eval data
     paths = [str(x) for x in Path(args['path_to_traindata_folder']).glob("*.txt")]
     paths_eval = [str(x) for x in Path(args['path_to_eval']).glob("*.txt")]
-    
+
     if args['train_tokenizer'] == True:
-        #train a tokenizer and create a vocab 
+        # train a tokenizer and create a vocab
         trainTokenizer(paths, args['outfile_tokenizer'])
-        tokenizer = RobertaTokenizer.from_pretrained(args['outfile_tokenizer'], max_length=512, padding=True, truncation=True)
+        tokenizer = RobertaTokenizer.from_pretrained(args['outfile_tokenizer'], max_length=512, padding=True,
+                                                     truncation=True)
     else:
-        #initialize trained tokenizer
-        tokenizer = RobertaTokenizer.from_pretrained(args['outfile_tokenizer'], max_length=512, padding=True, truncation=True)
-    
-    #initialize model and set model configurations
+        # initialize trained tokenizer
+        tokenizer = RobertaTokenizer.from_pretrained(args['outfile_tokenizer'], max_length=512, padding=True,
+                                                     truncation=True)
+
+    # initialize model and set model configurations
     config = setConfig()
-    
+
     if args['start_from_checkpoint'] == False:
         model = RobertaForMaskedLM(config=config)
     else:
         model = RobertaForMaskedLM(args['path_to_checkpoint'])
-    
-    #define data collator
+
+    # define data collator
     data_collator = DataCollatorForLanguageModeling(
         tokenizer=tokenizer, mlm=True, mlm_probability=0.15
     )
-    
-    #define optimizer and scheduler
+
+    # define optimizer and scheduler
     optimizer, scheduler = get_optimizer(model, args)
-    
-    #preprocess data
+
+    # preprocess data
     print('prepare data...')
     dataset = LineByLineTextDatasetRobbert(tokenizer, paths)
     eval_dataset = LineByLineTextDatasetRobbert(tokenizer, paths_eval)
 
-   
-    #initialize trainer with training arguments
+    # initialize trainer with training arguments
     trainer = setArguments(model, data_collator, dataset, eval_dataset, optimizer, scheduler, args)
 
     train(trainer, args['output_dir'])
-    
+
 
 args = json.loads(open('training_arguments.json').read())
 main(args)

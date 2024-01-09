@@ -1,6 +1,6 @@
-###
+"""
 @author: TheRealSuperMario: https://github.com/theRealSuperMario/supermariopy/blob/master/scripts/tflogs2pandas.py
-###
+"""
 
 import glob
 import os

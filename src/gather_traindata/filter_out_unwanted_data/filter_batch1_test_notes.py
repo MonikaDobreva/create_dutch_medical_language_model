@@ -8,16 +8,15 @@ Since the original data could not be provided due to privacy constraints, filepa
 import pickle
 import pandas as pd
 
-#read in test data from ICF experiment
+# read in test data from ICF experiment
 path = "../../Non_covid_data_15oct/a-proof-exp/test_data_batch1_disregard_removed.pkl"
 
 print("Reading pickle files...")
 with open(path, "rb") as pkl_file:
     data = pickle.load(pkl_file)
- 
- 
-#gather id's from the sentences used for testing batch 1
-keys = []    
+
+# gather id's from the sentences used for testing batch 1
+keys = []
 for instance in data:
     key = instance.key
     sen_id = instance.sen_id
@@ -26,10 +25,10 @@ for instance in data:
 
 note_ids = []
 for key in keys:
-    #le = len(str(key[1]))
+    # le = len(str(key[1]))
     if key[1] == '':
         note_ids.append(key[0].split('---')[1])
-    #else:
+    # else:
     #    note_ids.append([key[0].split('---')[1][:-le], key[2]])
 
 # create a set of the list so that you end up with 1 id per note instead of 1 id per sentence
@@ -39,8 +38,8 @@ columns_to_delete = list(set(note_ids))
 delete = []
 for item in columns_to_delete:
     number = int(item)
-    delete.append(number-1)
-    
+    delete.append(number - 1)
+
 # read in csv with all data
 original_csv = "/data/notes/vumc/all_data/notities_2017_deel2_cleaned.csv"
 
@@ -52,7 +51,7 @@ test1 = df_original['Unnamed: 0'].tolist()
 test2 = df_original['notitieID'].tolist()
 
 # select all data minus test data
-df_selection = df_original.loc[df_original['Unnamed: 0'].isin(delete)==False]
+df_selection = df_original.loc[df_original['Unnamed: 0'].isin(delete) == False]
 
-#write to csv file
-df_selection.to_csv(outfile, sep=';', index = False)
+# write to csv file
+df_selection.to_csv(outfile, sep=';', index=False)

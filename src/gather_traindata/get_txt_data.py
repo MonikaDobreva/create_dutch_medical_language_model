@@ -1,509 +1,131 @@
 """
-@author StellaVerkijk
-This script gathers pre-training data for the creation of the domain-specific medical language models.
-It loads csv's, adapts the row that contains the note by anonymizing it and dividing it in chunks and then exports it to a .txt file.
-This script contains a function for each hospital & year.
-"""
+Modified version of Stella Verkijk's script for gathering pre-training data for medical language models.
 
+Original author: Stella Verkijk
+Modifications by: Monika Dobreva
+"""
+import traceback
 import pandas as pd
-import re
-import glob
 import time
 import spacy
-import numpy as np
-nlp = spacy.load('nl_core_news_lg')
 
-def process_AMC_2018():
 
-    #CODE FOR AMC VALRISICO DATA 2018
-    start_time=time.time()
-    lens = []
-    note_count = 0
-    for path in glob.glob("/data/notes/amc/*2018_part?.csv"):
-        df = pd.read_csv(path, header = 0, index_col = None, sep = ',', encoding = 'utf-8')
-        with open ('data/anonymised/final/notes_2018_AMC_valrisico_anony_final.txt', 'a', encoding = 'utf-8') as outfile:
-            for index, row in df.iterrows():
-                doc = row['notitie']
-                note_count+=1
-                if note_count == 500000:
-                    print("amount of time taken for 50.000 notes = ", time.time() - start_time)
-                if note_count == 1000000:
-                    print("amount of time taken for 100.000 notes = ", time.time() - start_time)
-                if note_count == 1500000:
-                    print("amount of time taken for 150.000 notes = ", time.time() - start_time)
-                if note_count == 2000000:
-                    print("amount of time taken for 200.000 notes = ", time.time() - start_time)
+class GatherData:
+    """
+    This class processes a specific CSV file containing medical notes. It anonymizes sensitive
+    information in the notes and exports them into a text file, suitable for training language models.
+    """
+
+    def __init__(self):
+        # Load the Dutch language model from spaCy
+        self.nlp = spacy.load('nl_core_news_lg')
+
+    def read_csv(self, file_path: str):
+        """
+        Reads a CSV file and returns a DataFrame.
+
+        Parameters:
+        file_path (str): The file path of the CSV file to read.
+        """
+        return pd.read_csv(file_path, header=0, index_col=None, sep=',', encoding='utf-8')
+
+    def process_note(self, note_text: str):
+        """
+        Processes and anonymizes a single medical note.
+
+        Parameters:
+        note_text (str): The text of the medical note to process.
+
+        Returns:
+        str: Anonymized and processed medical note.
+        """
+        # Process the note text with spaCy
+        spacy_doc = self.nlp(note_text)
+        # Anonymize the note by replacing names, dates and locations (more tags can be added)
+        anonymized_note = str(spacy_doc)
+        for entity in reversed(spacy_doc.ents):
+            if entity.label_ in ['PERSON', 'GPE', 'DATE']:
+                anonymized_note = anonymized_note[:entity.start_char] + entity.label_ + anonymized_note[entity.end_char:]
+        return anonymized_note
+
+    def write_chunks(self, text: str, outfile):
+        """
+        Writes processed text into chunks in the output file.
+
+        Parameters:
+        text (str): The processed text to write in chunks.
+        outfile: The output file stream to write into.
+        """
+        # Re-process the anonymized note to split into sentences
+        processed_note = self.nlp(text)
+        sentences = [sentence for sentence in processed_note.sents]
+
+        # Define the chunk size
+        chunk_size = 40
+        # Divide the note into chunks of sentences
+        note_chunks = [sentences[i * chunk_size:(i + 1) * chunk_size] for i in range((len(sentences) + chunk_size - 1) // chunk_size)]
+
+        for chunk in note_chunks:
+            for sentence in chunk:
+                # Write the chunk to the output file
+                outfile.write(str(sentence) + (' ' if str(sentence).endswith('.') else ''))
+            outfile.write('\n')
+        return sum([len(sentence) for sentence in sentences])
+
+    def process_data(self, initial_data_file: str, output_data_file: str, column_name: str):
+        """
+        Processes medical notes from a CSV file, anonymizes the text, and exports it to a text file.
+
+        Parameters:
+        initial_data_file (str): The file path of the input CSV file containing medical notes.
+        output_data_file (str): The file path for the output text file where the processed and
+                                anonymized notes will be saved.
+        column_name (str): The name of the column in the CSV file that contains the medical note texts.
+        """
+        # Record start time for performance metrics
+        start_time = time.time()
+        # List to store lengths of chunks for analysis
+        chunk_lengths = []
+        # Counter for the number of processed notes
+        processed_notes_count = 0
+
+        # Read the input CSV file
+        file_data = self.read_csv(initial_data_file)
+
+        with open(output_data_file, 'a', encoding='utf-8') as outfile:
+            for index, row in file_data.iterrows():
+                # Extract the note text from each row, based on the provided column name
+                note_text = row[column_name]
+                processed_notes_count += 1
                 try:
-                    spacy_doc = nlp(doc)
-                    anonymised = str(spacy_doc)
-                    for e in reversed(spacy_doc.ents): #reversed to not modify the offsets of other entities when substituting
-                        if e.label_ == 'PERSON':
-                            anonymised = anonymised[:e.start_char] + e.label_ + anonymised[e.end_char:]
-                        if e.label_ == 'GPE':
-                            anonymised = anonymised[:e.start_char] + e.label_ + anonymised[e.end_char:]
-                    spacy_anon = nlp(anonymised)
-                    sentences = []
-                    for sentence in spacy_anon.sents:
-                        sentences.append(sentence)
-                    n = 40
-                    chunks = [sentences[i * n:(i + 1) * n] for i in range((len(sentences) + n -1) // n)]
-                    lens_per_doc = []
-                    for chunk in chunks:
-                        lens_per_chunk = []
-                        for sentence in chunk:
-                            lens_per_chunk.append(len(sentence))
-                            if str(sentence).endswith('.'):
-                                outfile.write(str(sentence)+(' '))
-                            else:
-                                outfile.write(str(sentence))
-                        outfile.write('\n')
-                        lens_per_doc.append(lens_per_chunk)
-                    lens.append(lens_per_doc)
-                except:
-                    print("Doc could not be read into spacy")
-                
-    list_sums = []
-    print(len(lens))
-    for doc in lens:
-        for chunk in doc:
-            list_sums.append(sum(chunk))
-    avg_length = sum(list_sums) / len(list_sums)
-    print("Average length per chunk :", avg_length)
-    i=0
-    for item in list_sums:
-        if item > 512:
-            i += 1
-    print("AMC 2018 data")
-    print("Total amount of chunks: ", len(list_sums))
-    print("Amount of chunks larger than 512: ", str(i))
-    print("Largest length of chunk: ", max(list_sums))
-    print("Amount of notes: ", note_count)
-    hours,rem = divmod(time.time() - start_time, 3600)
-    minutes, seconds = divmod(rem, 60)
-    print("{:0>2}:{:0>2}:{:05.2f}".format(int(hours),int(minutes),seconds))
-
-
-def process_AMC_2017():
-    
-    #CODE FOR AMC VALRISICO DATA 2017
-    start_time=time.time()
-    lens = []
-    note_count = 0
-    for path in glob.glob("/data/notes/amc/*2017_part?.csv"):
-        df = pd.read_csv(path, header = 0, index_col = None, sep = ',', encoding = 'utf-8')
-        with open ('data/anonymised/final/notes_2017_AMC_valrisico_anony_final.txt', 'a', encoding = 'utf-8') as outfile:
-            for index, row in df.iterrows():
-                note_count+=1
-                doc= row['notitie']
-                if note_count == 500000:
-                    print("amount of time taken for 50.000 notes = ", time.time() - start_time)
-                if note_count == 1000000:
-                    print("amount of time taken for 100.000 notes = ", time.time() - start_time)
-                if note_count == 1500000:
-                    print("amount of time taken for 150.000 notes = ", time.time() - start_time)
-                if note_count == 2000000:
-                    print("amount of time taken for 200.000 notes = ", time.time() - start_time)
-                try:
-                    spacy_doc = nlp(doc)
-                    anonymised = str(spacy_doc)
-                    for e in reversed(spacy_doc.ents): #reversed to not modify the offsets of other entities when substituting
-                        if e.label_ == 'PERSON':
-                            anonymised = anonymised[:e.start_char] + e.label_ + anonymised[e.end_char:]
-                        if e.label_ == 'GPE':
-                            anonymised = anonymised[:e.start_char] + e.label_ + anonymised[e.end_char:]
-                    spacy_anon = nlp(anonymised)
-                    sentences = []
-                    for sentence in spacy_anon.sents:
-                        sentences.append(sentence)
-                    n = 40
-                    chunks = [sentences[i * n:(i + 1) * n] for i in range((len(sentences) + n -1) // n)]
-                    lens_per_doc = []
-                    for chunk in chunks:
-                        lens_per_chunk = []
-                        for sentence in chunk:
-                            lens_per_chunk.append(len(sentence))
-                            if str(sentence).endswith('.'):
-                                outfile.write(str(sentence)+(' '))
-                            else:
-                                outfile.write(str(sentence))
-                        outfile.write('\n')
-                        lens_per_doc.append(lens_per_chunk)
-                    lens.append(lens_per_doc)
-                except:
-                    print("Doc could not be read into spacy")
-                
-    list_sums = []
-    print(len(lens))
-    for doc in lens:
-        for chunk in doc:
-            list_sums.append(sum(chunk))
-    avg_length = sum(list_sums) / len(list_sums)
-    print("Average length per chunk :", avg_length)
-    i=0
-    for item in list_sums:
-        if item > 512:
-            i += 1
-    print("AMC 2017 data")
-    print("Total amount of chunks: ", len(list_sums))
-    print("Amount of chunks larger than 512: ", str(i))
-    print("Largest length of chunk: ", max(list_sums))
-    print("Amount of notes: ", note_count)
-    hours,rem = divmod(time.time() - start_time, 3600)
-    minutes, seconds = divmod(rem, 60)
-    print("{:0>2}:{:0>2}:{:05.2f}".format(int(hours),int(minutes),seconds))
-
-
-def process_AMC_2020():
-    
-    # CODE FOR AMC 2020 data NO COVID
-    lens = []
-    note_count = 0
-    start_time=time.time()
-    path = "notities_AMC_2020_without_covid.csv"
-    df = pd.read_csv(path, header = None, index_col = None, sep = ';', encoding = 'utf-8')
-
-    with open ('data/anonymised/final/notes_2020_AMC_nocovid_anony_final.txt', 'a', encoding = 'utf-8') as outfile:
-        for index, row in df.iterrows():
-            note_count+=1
-            doc = row[5]
-            if note_count == 500000:
-                print("amount of time taken for 50.000 notes = ", time.time() - start_time)
-            if note_count == 1000000:
-                print("amount of time taken for 100.000 notes = ", time.time() - start_time)
-            if note_count == 1500000:
-                print("amount of time taken for 150.000 notes = ", time.time() - start_time)
-            if note_count == 2000000:
-                print("amount of time taken for 200.000 notes = ", time.time() - start_time)
-            try:
-                spacy_doc = nlp(doc)
-                anonymised = str(spacy_doc)
-                for e in reversed(spacy_doc.ents): #reversed to not modify the offsets of other entities when substituting
-                    if e.label_ == 'PERSON':
-                        anonymised = anonymised[:e.start_char] + e.label_ + anonymised[e.end_char:]
-                    if e.label_ == 'GPE':
-                        anonymised = anonymised[:e.start_char] + e.label_ + anonymised[e.end_char:]
-                spacy_anon = nlp(anonymised)
-                sentences = []
-                for sentence in spacy_anon.sents:
-                    sentences.append(sentence)
-                #chunks = np.array_split(sentences, 6)
-                #chunks = [sentences[i:i + 60] for i in range(0, len(sentences), 6)]
-                n = 40
-                chunks = [sentences[i * n:(i + 1) * n] for i in range((len(sentences) + n -1) // n)]
-                lens_per_doc = []
-                for chunk in chunks:
-                    lens_per_chunk = []
-                    for sentence in chunk:
-                        lens_per_chunk.append(len(sentence))
-                        if str(sentence).endswith('.'):
-                            outfile.write(str(sentence)+(' '))
-                        else:
-                            outfile.write(str(sentence))
-                    outfile.write('\n')
-                    lens_per_doc.append(lens_per_chunk)
-                lens.append(lens_per_doc)
-            except:
-                print("Doc could not be read into spacy")
-                
-    list_sums = []
-    print('AMC 2020 data') 
-    print(len(lens))
-    for doc in lens:
-        for chunk in doc:
-            list_sums.append(sum(chunk))
-    avg_length = sum(list_sums) / len(list_sums)
-    print("Average length per chunk :", avg_length)
-    i=0
-    for item in list_sums:
-        if item > 512:
-            i += 1
-    print("AMC 2018 data")
-    print("Total amount of chunks: ", len(list_sums))
-    print("Amount of chunks larger than 512: ", str(i))
-    print("Largest length of chunk: ", max(list_sums))
-    print("Amount of notes: ", note_count)
-    hours,rem = divmod(time.time() - start_time, 3600)
-    minutes, seconds = divmod(rem, 60)
-    print("{:0>2}:{:0>2}:{:05.2f}".format(int(hours),int(minutes),seconds))
-
-
-
-def process_VUMC_2020():
-    
-    # CODE FOR VUMC 2020 data NO COVID
-    lens = []
-    note_count = 0
-    start_time=time.time()
-    path = "notities_VUMC_2020_without_covid.csv"
-    df = pd.read_csv(path, header = None, index_col = None, sep = ';', encoding = 'utf-8')
-    
-    with open ('data/anonymised/final/notes_2020_VUMC_nocovid_anony_final.txt', 'a', encoding = 'utf-8') as outfile:
-        for index, row in df.iterrows():
-            note_count+=1
-            doc = row[5]
-            if note_count == 500000:
-                print("amount of time taken for 50.000 notes = ", time.time() - start_time)
-            if note_count == 1000000:
-                print("amount of time taken for 100.000 notes = ", time.time() - start_time)
-            if note_count == 1500000:
-                print("amount of time taken for 150.000 notes = ", time.time() - start_time)
-            if note_count == 2000000:
-                print("amount of time taken for 200.000 notes = ", time.time() - start_time)
-            try:
-                spacy_doc = nlp(doc)
-                anonymised = str(spacy_doc)
-                for e in reversed(spacy_doc.ents): #reversed to not modify the offsets of other entities when substituting
-                    if e.label_ == 'PERSON':
-                        anonymised = anonymised[:e.start_char] + e.label_ + anonymised[e.end_char:]
-                    if e.label_ == 'GPE':
-                        anonymised = anonymised[:e.start_char] + e.label_ + anonymised[e.end_char:]
-                spacy_anon = nlp(anonymised)
-                sentences = []
-                for sentence in spacy_anon.sents:
-                    sentences.append(sentence)
-                n = 40
-                chunks = [sentences[i * n:(i + 1) * n] for i in range((len(sentences) + n -1) // n)]
-                lens_per_doc = []
-                for chunk in chunks:
-                    lens_per_chunk = []
-                    for sentence in chunk:
-                        lens_per_chunk.append(len(sentence))
-                        if str(sentence).endswith('.'):
-                            outfile.write(str(sentence)+(' '))
-                        else:
-                            outfile.write(str(sentence))
-                    outfile.write('\n')
-                    lens_per_doc.append(lens_per_chunk)
-                lens.append(lens_per_doc)
-            except:
-                print("Doc could not be read into spacy")
-    
-    list_sums = []
-    for doc in lens:
-        for chunk in doc:
-            list_sums.append(sum(chunk))
-    avg_length = sum(list_sums) / len(list_sums)
-    print("Average length per chunk :", avg_length)
-    i=0
-    for item in list_sums:
-        if item > 512:
-            i += 1
-    print("VUMC 2020 data")
-    print("Total amount of chunks: ", len(list_sums))
-    print("Amount of chunks larger than 512: ", str(i))
-    print("Largest length of chunk: ", max(list_sums))
-    print("Amount of notes: ", note_count)
-    hours,rem = divmod(time.time() - start_time, 3600)
-    minutes, seconds = divmod(rem, 60)
-    print("{:0>2}:{:0>2}:{:05.2f}".format(int(hours),int(minutes),seconds))
-    
-        
-
-def process_VUMC_2017_deel1():
-
-    #CODE FOR VUMC valrisico data 2017 deel 1 
-    lens = []
-    note_count = 0
-    start_time=time.time()
-    path = "/data/notes/vumc/all_data/notities_2017_deel1_cleaned.csv"
-    df = pd.read_csv(path, header = 0, index_col = None, sep = ',', encoding = 'utf-8')
-    
-    with open ('data/anonymised/final/notes_2017_VUMC_deel1_anony_final.txt', 'a', encoding = 'utf-8') as outfile:
-        for index, row in df.iterrows():
-            note_count+=1
-            doc = row['notitie']
-            if note_count == 500000:
-                print("amount of time taken for 50.000 notes = ", time.time() - start_time)
-            if note_count == 1000000:
-                print("amount of time taken for 100.000 notes = ", time.time() - start_time)
-            if note_count == 1500000:
-                print("amount of time taken for 150.000 notes = ", time.time() - start_time)
-            if note_count == 2000000:
-                print("amount of time taken for 200.000 notes = ", time.time() - start_time)
-            try:
-                spacy_doc = nlp(doc)
-                anonymised = str(spacy_doc)
-                for e in reversed(spacy_doc.ents): #reversed to not modify the offsets of other entities when substituting
-                    if e.label_ == 'PERSON':
-                        anonymised = anonymised[:e.start_char] + e.label_ + anonymised[e.end_char:]
-                    if e.label_ == 'GPE':
-                        anonymised = anonymised[:e.start_char] + e.label_ + anonymised[e.end_char:]
-                spacy_anon = nlp(anonymised)
-                sentences = []
-                for sentence in spacy_anon.sents:
-                    sentences.append(sentence)
-                #chunks = np.array_split(sentences, 6)
-                #chunks = [sentences[i:i + 60] for i in range(0, len(sentences), 6)]
-                n = 40
-                chunks = [sentences[i * n:(i + 1) * n] for i in range((len(sentences) + n -1) // n)]
-                lens_per_doc = []
-                for chunk in chunks:
-                    lens_per_chunk = []
-                    for sentence in chunk:
-                        lens_per_chunk.append(len(sentence))
-                        if str(sentence).endswith('.'):
-                            outfile.write(str(sentence)+(' '))
-                        else:
-                            outfile.write(str(sentence))
-                    outfile.write('\n')
-                    lens_per_doc.append(lens_per_chunk)
-                lens.append(lens_per_doc)
-            except:
-                print("Doc could not be read into spacy")
-                
-    list_sums = []
-    print('VUMC 2017 data - deel 1')
-    print(len(lens))
-    for doc in lens:
-        for chunk in doc:
-            list_sums.append(sum(chunk))
-    avg_length = sum(list_sums) / len(list_sums)
-    print("Average length per chunk :", avg_length)
-    i=0
-    for item in list_sums:
-        if item > 512:
-            i += 1
-    print("AMC 2018 data")
-    print("Total amount of chunks: ", len(list_sums))
-    print("Amount of chunks larger than 512: ", str(i))
-    print("Largest length of chunk: ", max(list_sums))
-    print("Amount of notes: ", note_count)
-    hours,rem = divmod(time.time() - start_time, 3600)
-    minutes, seconds = divmod(rem, 60)
-    print("{:0>2}:{:0>2}:{:05.2f}".format(int(hours),int(minutes),seconds))
-
-
-
-def process_VUMC_2017_deel2():
-    
-    #CODE FOR VUMC valrisico data 2017 deel 2 without a-proof test data    
-    lens = []
-    note_count = 0
-    start_time=time.time()
-    path = "notities_VUMC_2017_deel2_without_a-proof_testdata.csv"
-    df = pd.read_csv(path, header = 0, index_col = None, sep = ';', encoding = 'utf-8')
-    
-    with open('data/anonymised/final/notes_2017_VUMC_deel2_notestdata_anony_final.txt', 'a', encoding = 'utf-8') as outfile:
-        for index, row in df.iterrows():
-            note_count+=1
-            doc = row['notitie']
-            if note_count == 500000:
-                print("amount of time taken for 50.000 notes = ", time.time() - start_time)
-            if note_count == 1000000:
-                print("amount of time taken for 100.000 notes = ", time.time() - start_time)
-            if note_count == 1500000:
-                print("amount of time taken for 150.000 notes = ", time.time() - start_time)
-            if note_count == 2000000:
-                print("amount of time taken for 200.000 notes = ", time.time() - start_time)
-            try:
-                spacy_doc = nlp(doc)
-                anonymised = str(spacy_doc)
-                for e in reversed(spacy_doc.ents): #reversed to not modify the offsets of other entities when substituting
-                    if e.label_ == 'PERSON':
-                        anonymised = anonymised[:e.start_char] + e.label_ + anonymised[e.end_char:]
-                    if e.label_ == 'GPE':
-                        anonymised = anonymised[:e.start_char] + e.label_ + anonymised[e.end_char:]
-                spacy_anon = nlp(anonymised)
-                sentences = []
-                for sentence in spacy_anon.sents:
-                    sentences.append(sentence)
-                #chunks = np.array_split(sentences, 6)
-                #chunks = [sentences[i:i + 60] for i in range(0, len(sentences), 6)]
-                n = 40
-                chunks = [sentences[i * n:(i + 1) * n] for i in range((len(sentences) + n -1) // n)]
-                lens_per_doc = []
-                for chunk in chunks:
-                    lens_per_chunk = []
-                    for sentence in chunk:
-                        lens_per_chunk.append(len(sentence))
-                        if str(sentence).endswith('.'):
-                            outfile.write(str(sentence)+(' '))
-                        else:
-                            outfile.write(str(sentence))
-                    outfile.write('\n')
-                    lens_per_doc.append(lens_per_chunk)
-                lens.append(lens_per_doc)
-            except:
-                print("Doc could not be read into spacy")
-                
-    list_sums = []
-    print('VUMC 2017 data - deel 2')
-    print(len(lens))
-    for doc in lens:
-        for chunk in doc:
-            list_sums.append(sum(chunk))
-    avg_length = sum(list_sums) / len(list_sums)
-    print("Average length per chunk :", avg_length)
-    i=0
-    for item in list_sums:
-        if item > 512:
-            i += 1
-    print("AMC 2018 data")
-    print("Total amount of chunks: ", len(list_sums))
-    print("Amount of chunks larger than 512: ", str(i))
-    print("Largest length of chunk: ", max(list_sums))
-    print("Amount of notes: ", note_count)
-    hours,rem = divmod(time.time() - start_time, 3600)
-    minutes, seconds = divmod(rem, 60)
-    print("{:0>2}:{:0>2}:{:05.2f}".format(int(hours),int(minutes),seconds))
-    
-
-#process_AMC_2020()
-#process_VUMC_2017_deel1()
-process_VUMC_2017_deel2()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    
-
-
-
+                    anonymized_note = self.process_note(note_text)
+                    chunk_length = self.write_chunks(anonymized_note, outfile)
+                    chunk_lengths.append(chunk_length)
+                except Exception as e:
+                    print(f"Error processing row {index}: {e}")
+                    traceback.print_exc()
+
+        # Calculate and print statistics...
+        self.print_statistics(chunk_lengths, processed_notes_count, start_time)
+
+    def print_statistics(self, chunk_lengths: list[int], note_count: int, start_time: float):
+        """
+        Prints statistics about the processed data.
+
+        Parameters:
+        chunk_lengths (list): List of lengths of each processed chunk.
+        note_count (int): Total number of processed notes.
+        start_time (float): The start time of the processing.
+        """
+        avg_chunk_length = sum(chunk_lengths) / len(chunk_lengths)
+        chunks_over_limit = sum(length > 512 for length in chunk_lengths)
+
+        print(f"Average length per chunk: {avg_chunk_length}")
+        print(f"Total amount of chunks: {len(chunk_lengths)}")
+        print(f"Amount of chunks larger than 512: {chunks_over_limit}")
+        print(f"Largest length of chunk: {max(chunk_lengths)}")
+        print(f"Amount of notes: {note_count}")
+
+        # Calculate and print the processing time
+        elapsed_time = divmod(time.time() - start_time, 3600)
+        print(f"Processing time: {int(elapsed_time[0]):02d}:{int(elapsed_time[1] // 60):02d}:{elapsed_time[1] % 60:.2f}")
