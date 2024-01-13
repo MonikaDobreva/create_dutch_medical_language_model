@@ -1,8 +1,8 @@
 """
 Modified version of Stella Verkijk's script for gathering pre-training data for medical language models.
 
-Original author: Stella Verkijk
-Modifications by: Monika Dobreva
+Original author: StellaVerkijk
+Modifications by: MonikaDobreva
 """
 import traceback
 import pandas as pd
