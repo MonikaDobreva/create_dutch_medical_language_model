@@ -1,10 +1,11 @@
-# Creating Dutch Medical Language Models: a thesis project
-This repository contains the code for the creation and evaluation of two domain-specific Dutch Medical Language models.
-Most data used in this project can not be provided due to privacy constraints. Where possible, data is provided.
+# Creating Dutch Medical Language Models
+This directory contains the code for the creation and evaluation of domain-specific Dutch Medical Language models.
+
+It is a modification of Stella Verkijk's repository: https://github.com/cltl-students/verkijk_stella_rma_thesis_dutch_medical_language_model
 
 # Overview
 The src folder contains all code and data. Per subfolder, a readme is provided. 
-The subfolders it contains are the following:
+The structure is the following:
 ```
 └───src
 │   └───gather_traindata (provides the code used for gathering, filtering and preparing the data used for pre-training in train_lm)
@@ -15,7 +16,4 @@ The subfolders it contains are the following:
 │   └───anonymization (provides the code to anonymize the vocabulary of a language model and test the level of anonymicity of a language model)
 ```
 
-
-## Thesis report
-The thesis report can be accessed here:
 
