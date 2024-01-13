@@ -1,61 +1,67 @@
 """
-@author StellaVerkijk
-This script creates a dataset of 8000 sentences that can be used for an anonymization test using the fill-mask task of transformer language models.
-For the anonymization test of the From Scratch Language model, a subset of the data set created with this script was used.
-This script contains one function that loads a text file, splits on sentences, select sentences that contain the token 'PERSON' and that are between 30 and 120 characters long, replaces the PERSON tokens in these sentences with the <mask> token and writes a sample of 8000 of these sentences to a csv file.
+original author: StellaVerkijk
+modifications by: MonikaDobreva
 """
 
-import glob
-from pathlib import Path
 import pandas as pd
 from random import sample
+from pathlib import Path
 
 
-def gather_sentences(path_to_textfile, outdir):
+class Masker:
     """
-    Loads a text file, splits on sentences, select sentences that contain the token 'PERSON' and that are between 30 and 120 characters long, replaces the PERSON tokens in these sentences with the <mask> token and writes a sample of 8000 of these sentences to a csv file.
-    
-    :param path_to_textfile: str
-    :param outdir: str
+    This class processes a text file to create a dataset for anonymization testing.
+    It extracts sentences containing the token 'PERSON', replaces it with '<mask>', and stores the sentences.
+
+    It could be expanded to mask more tokens such as 'DATE'
     """
 
-    # select sentences with PERSON that are longer than 30 characters, replace PERSON with <mask> and gather the
-    # sentences in a list
-    sentences = []
-    with open(path_to_textfile, 'r', encoding='utf-8') as infile:
-        for line in infile.readlines():
-            sens = line.split('. ')
-            for sen in sens:
-                if 'PERSON' in sen:
-                    if len(sen) > 30:
-                        sentences.append(sen.replace('PERSON', '<mask>').strip('\n'))
+    def __init__(self, path_textfile, output_directory):
+        """
+        Initializes the Masker with the file path and output directory.
 
-                        # remove sentences from the list that contain more than 120 characters and add a full stop to
-                        # each sentence
-    filtered_sentences = []
-    for sentence in sentences:
-        if 30 <= len(sentence) <= 120:
-            filtered_sentences.append(sentence + '.')
+        :param path_textfile: str, path to the input text file.
+        :param output_directory: str, directory to save the output file.
+        """
+        self.path_textfile = path_textfile
+        self.output_directory = output_directory
 
-    # remove sentences that contain more than one <mask> token
-    for sentence in filtered_sentences:
-        tokens = sentence.split()
-        i = 0
-        for token in tokens:
-            if '<mask>' in token:
-                i += 1
-        if i > 1:
-            filtered_sentences.remove(sentence)
-        i = 0
+    def load_and_process_sentences(self):
+        """
+        Loads the text file, processes sentences containing 'PERSON', and returns a filtered list of sentences.
+        It looks for only one instance of <mask> within a sentence, this could be changed.
+        :return: list of processed sentences.
+        """
+        sentences = []
+        with open(self.path_textfile, 'r', encoding='utf-8') as infile:
+            for line in infile:
+                sentences.extend(self.process_line(line))
+        return [sentence for sentence in sentences if 30 <= len(sentence) <= 120 and sentence.count('<mask>') == 1]
 
-    # take a random sample of 8000 sentences of the current selection
-    random = sample(filtered_sentences, 8000)
+    @staticmethod
+    def process_line(line):
+        """
+        Processes a line by splitting into sentences, replacing 'PERSON' with '<mask>', and filtering based on length.
+        :param line: str, a line from the input file.
+        :return: list of processed sentences from the line.
+        """
+        return [sen.replace('PERSON', '<mask>').strip() + '.'
+                for sen in line.split('. ')
+                if 'PERSON' in sen and len(sen) > 30]
 
-    # write to a dataframe
-    df_small = pd.DataFrame()
-    df_small['sentences'] = random
-    df_small['guessed_tokens'] = 0
+    def create_dataset(self):
+        """
+        Creates a dataset of 40 sentences and saves it to a CSV file.
+        Sentence amount can be changed.
+        """
+        processed_sentences = self.load_and_process_sentences()
+        selected_sentences = sample(processed_sentences, min(40, len(processed_sentences)))
+        df = pd.DataFrame({'sentences': selected_sentences, 'guessed_tokens': 0})
+        df.to_csv(Path(self.output_directory) / "anonymized_sentences.csv", sep=';', index=False)
 
-    df_small.to_csv(outdir, sep=';', index=False)
 
-# gather_sentences("../gather_traindata/data/anonymised/validation/eval.txt", "anon_testset_eval.csv")
+# # Example usage
+# path_to_textfile = "path/to/textfile.txt"
+# output_directory = "path/to/output"
+# masker = Masker(path_to_textfile, output_directory)
+# masker.create_dataset()
