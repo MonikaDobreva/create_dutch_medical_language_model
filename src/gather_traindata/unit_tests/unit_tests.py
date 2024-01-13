@@ -1,6 +1,6 @@
 import unittest
 from io import StringIO
-from gather_persons import GatherData
+from gather_traindata import GatherData
 import pandas as pd
 
 
