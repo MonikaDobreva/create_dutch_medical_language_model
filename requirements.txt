@@ -1,6 +1,6 @@
-transformers==4.3.3
-tokenizers==0.10.1
-tensorflow==2.4.1
-torch==1.8.0
-python==3.8.2
-cuda==11.2.1-1
+transformers==4.35.0
+tokenizers==0.14.1
+tensorflow==2.14.0
+torch==2.1.0
+# python==3.8.2 used in original research
+# cuda==11.2.1-1 same as above
